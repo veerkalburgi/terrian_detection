@@ -1,0 +1,159 @@
+<launch>
+  <arg name="vehicle" default="H01"/>
+
+        <!-- THIS LAUNCHES TERRAIN DETECTION ON EITHER CENTER REALSENSE OR RIGHT+LEFT PICOFLEXX'S-->
+        <!-- Enable Cameras, VoxelGrid Filters, and SOR Filters -->
+        <arg name="enable_terrain_pipeline_center"  default="0"/>
+        <arg name="enable_terrain_pipeline_right"   default="1"/>
+        <arg name="enable_terrain_pipeline_left"    default="1"/>
+
+        <!-- Enable Terrain Detection Nodelets -->
+        <arg name="enable_terrain_detection_center"         default="0"/>
+        <arg name="enable_terrain_detection_right_left"     default="1"/>
+
+        <arg name="terrain_center_camera"           default="terrain_center_camera"/>
+        <arg name="terrain_center_manager"          default="realsense_manager"/>
+
+        <arg name="terrain_right_camera"            default="terrain_right_camera"/>
+        <arg name="terrain_right_serial_number"     default="0007-2108-0181-0610"/>
+        <arg name="terrain_right_use_case"          default="MODE_9_10FPS_1000"/>
+
+        <arg name="terrain_left_camera"             default="terrain_left_camera"/>
+        <arg name="terrain_left_serial_number"      default="0007-2108-0181-1907"/>
+        <arg name="terrain_left_use_case"           default="MODE_9_10FPS_1000"/>
+
+        <arg name="PI"			              	        default="3.14159265359"/>
+
+    <!--    <arg name="rs_pitch"    			              default="$(eval  1.0 / 4. * arg('PI'))"/> --> <!-- Pitch angle of RealSense terrain camera relative to looking forward -->
+        <!-- <arg name="rs_pitch"                        default=".3491"/> -->
+        <arg name="rs_pitch"                        default=".5236"/>
+        <arg name="c_rs_p"                         	default="$(eval  1.0 * arg('rs_pitch'))"/> <!-- Center RealSense Pitch-->
+
+        <arg name="pf_pitch"    			              default="$(eval  1.0 / 4. * arg('PI'))"/> <!-- Pitch angle of PicoFlexx terrain camera relative to looking forward -->
+        <arg name="pf_yaw"              		        default="$(eval  1.0 / 8. * arg('PI'))"/> <!-- Fan angle separating PicoFlexx's. Make 1/2 horizontal FoV (45 deg) -->
+        <arg name="pf_roll"                         default="$(eval  0.5 * arg('PI'))"/> <!-- Stand up PicoFlexx vertically so cable comes out bottom -->
+        <arg name="pf_dist"                         default="$(eval  1.0 * 0.017 / 2.)"/> <!-- Make separation distance 1/2 width of PicoFlexx (17mm) -->
+
+	    <!-- X_XX_X = right/left sensor, picoflexx/realsense, distance/roll/pitch/yaw -->
+        <arg name="r_pf_d"                         	default="$(eval -1.0 * arg('pf_dist'))"/> <!-- Right PicoFlexx Distance Offset -->
+        <arg name="l_pf_d"                         	default="$(eval  1.0 * arg('pf_dist'))"/> <!-- Left PicoFlexx Distance Offset -->
+        <arg name="r_pf_y"                         	default="$(eval -1.0 * arg('pf_yaw') / 0.70710678118)"/> <!-- 0.707 = cos(pf_pitch) MAKE SURE TO MANUALLY UPDATE -->
+        <arg name="l_pf_y"                         	default="$(eval  1.0 * arg('pf_yaw') / 0.70710678118)"/> <!-- 0.707 = cos(pf_pitch) MAKE SURE TO MANUALLY UPDATE -->
+        <arg name="r_pf_p"                         	default="$(eval  1.0 * arg('pf_pitch'))"/> <!-- Right PicoFlexx Pitch -->
+        <arg name="l_pf_p"                         	default="$(eval  1.0 * arg('pf_pitch'))"/> <!-- Left PicoFlexx Pitch -->
+        <arg name="r_pf_r"                         	default="$(eval  arg('pf_roll') + 0.95 * arg('r_pf_y') * arg('r_pf_p'))"/> <!-- Right PicoFlexx Roll -->
+        <arg name="l_pf_r"                         	default="$(eval  arg('pf_roll') + 0.95 * arg('l_pf_y') * arg('l_pf_p'))"/> <!-- Left PicoFlexx Roll -->
+
+        <node pkg="nodelet" type="nodelet" name="standalone_nodelet" args="manager" output="screen" />
+        <node pkg="tf2_ros" type="static_transform_publisher" name="baselinkshift" args=".48 0.0 0.0 0 0 0 1 /$(arg vehicle)/base_link /$(arg vehicle)/base_link_shift"/>
+
+        <!-- Downsample / crop data -->
+
+        <node pkg="nodelet" type="nodelet" name="terrain_right_vg_x" args="load pcl/VoxelGrid standalone_nodelet" respawn="true" if="$(arg enable_terrain_pipeline_right)">
+            <remap from="~input" to="pico_flexx_right/points"/>
+            <remap from="~voxel_grid/output" to="terrain_right_vg_x/output"/>
+            <rosparam>
+                filter_field_name: z <!-- Depth(+) -->
+                filter_limit_min:  0.1
+                filter_limit_max:  2.5
+                filter_limit_negative: False
+                leaf_size: 0.05
+            </rosparam>
+        </node>
+
+        <node pkg="nodelet" type="nodelet" name="terrain_left_vg_x" args="load pcl/VoxelGrid standalone_nodelet" respawn="true" if="$(arg enable_terrain_pipeline_left)">
+            <remap from="~input" to="pico_flexx_left/points"/>
+            <remap from="~voxel_grid/output" to="terrain_left_vg_x/output"/>
+            <rosparam>
+                filter_field_name: z <!-- Depth(+) -->
+                filter_limit_min:  0.1
+                filter_limit_max:  2.5
+                filter_limit_negative: False
+                leaf_size: 0.05
+            </rosparam>
+        </node>
+
+
+        <node pkg="nodelet" type="nodelet" name="terrain_right_sor" args="load pcl/StatisticalOutlierRemoval standalone_nodelet" respawn="true" if="$(arg enable_terrain_pipeline_right)">
+            <remap from="~input" to="terrain_right_vg_x/output"/>
+            <rosparam>
+                mean_k: 50
+                stddev:  1.0
+                negative:  False
+            </rosparam>
+        </node>
+
+        <node pkg="nodelet" type="nodelet" name="terrain_left_sor" args="load pcl/StatisticalOutlierRemoval standalone_nodelet" respawn="true" if="$(arg enable_terrain_pipeline_left)">
+            <remap from="~input" to="terrain_left_vg_x/output"/>
+            <rosparam>
+                mean_k: 50
+                stddev:  1.0
+                negative:  False
+            </rosparam>
+        </node>
+
+	    <!-- NOTE: The following warning will appear if SOR filter outputs empty PCL: [pcl::KdTreeFLANN::setInputCloud] Cannot create a KDTree with an empty input cloud! -->
+
+        <!-- Terrain detection: Right+Left PicoFlexx -->
+        <node pkg="nodelet" type="nodelet" name="terrain_detection" args="load terrain/terrain_detection_nodelet standalone_nodelet" output="screen" if="$(arg enable_terrain_detection_right_left)">
+            <remap from="pcl_in_1"      to="terrain_right_sor/output" />
+            <remap from="pcl_in_2"      to="terrain_left_sor/output" />
+            <remap from="~pcl_out_1"    to="~pcl_out_right" />
+            <remap from="~pcl_out_2"    to="~pcl_out_left" />
+            <rosparam>
+                transform_pcl_yaw_1:     -0.4734  <!-- r_pf_y -->
+                transform_pcl_pitch_1:    0.5469  <!-- r_pf_p -->
+                transform_pcl_roll_1:    -1.8311  <!-- r_pf_r -->
+                transform_pcl_yaw_2:      0.4734  <!-- l_pf_y -->
+                transform_pcl_pitch_2:    0.5469  <!-- l_pf_p -->
+                transform_pcl_roll_2:     -1.3103  <!-- l_pf_r -->
+                normal_radius:            0.15  <!--  0.15 for Husky -->  <!--  0.10 for Track Bot -->
+                normal_x_LT_threshold:   -0.50
+                normal_x_GT_threshold:    0.50
+                normal_y_LT_threshold:   -0.50
+                normal_y_GT_threshold:    0.50
+                normal_z_LT_threshold:    0.866
+                normal_z_GT_threshold:    1.00
+                ror_radius:               0.10
+                ror_min_neighbors:           7
+                # Set the spatial locator. Possible values are: 0 (ANN), 1 (FLANN), 2 (organized)
+                spatial_locator: 0
+            </rosparam>
+        </node>
+
+        <!-- PCL to Laserscan Nodelet -->
+
+        <node pkg="nodelet" type="nodelet" name="terrain_right_pcl2laser" args="load pointcloud_to_laserscan/pointcloud_to_laserscan_nodelet standalone_nodelet" output="screen" if="$(arg enable_terrain_pipeline_right)">
+            <remap from="cloud_in" to="terrain_detection/pcl_out_right"/>
+            <remap from="scan" to="terrain_detection/scan_out_right"/>
+            <param name="target_frame" type="str" value="$(arg vehicle)/base_link" />
+            <param name="min_height" type="double" value="-10.0" />
+            <param name="max_height" type="double" value="10.0" />
+            <param name="min_range" type="double" value="0" />
+            <param name="max_range" type="double" value="1000" />
+            <param name="angle_min" type="double" value="-0.78539816339" /> <!-- 1.1780972451 -->
+            <param name="angle_max" type="double" value="0.78539816339" /> <!-- 1.96349540849 -->
+            <param name="angle_increment" type="double" value="0.0174533" />
+            <param name="use_inf" type="boolean" value="true" />
+        </node>
+
+        <node pkg="nodelet" type="nodelet" name="terrain_left_pcl2laser" args="load pointcloud_to_laserscan/pointcloud_to_laserscan_nodelet standalone_nodelet" output="screen" if="$(arg enable_terrain_pipeline_left)">
+            <remap from="cloud_in" to="terrain_detection/pcl_out_left"/>
+            <remap from="scan" to="terrain_detection/scan_out_left"/>
+            <param name="target_frame" type="str" value="$(arg vehicle)/base_link" />
+            <param name="min_height" type="double" value="-10.0" />
+            <param name="max_height" type="double" value="10.0" />
+            <param name="min_range" type="double" value="0" />
+            <param name="max_range" type="double" value="1000" />
+            <param name="angle_min" type="double" value="-0.78539816339" /> <!-- 1.1780972451 -->
+            <param name="angle_max" type="double" value="0.78539816339" /> <!-- 1.96349540849 -->
+            <param name="angle_increment" type="double" value="0.0174533" />
+            <param name="use_inf" type="boolean" value="true" />
+        </node>
+
+    <node pkg="terrain_detection" name="laserscan2pcl" type="laserscan2pcl" respawn="true" output="screen">
+      <param name="vehicle_name" value="$(arg vehicle)/base_link"/>
+      <remap from="terrain_detection/laserscanPCL" to="octomap_in"/>
+    </node>
+
+</launch>

@@ -1,0 +1,7 @@
+/**
+@mainpage
+@htmlinclude manifest.html
+
+@b terrain_dection This package senses terrain obstacles using local normal plane estimation.
+
+*/
